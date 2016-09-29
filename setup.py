@@ -11,7 +11,6 @@ setuptools.setup(
     install_requires=[
         "google-api-python-client",
         "pyramid",
-        "pyramid_jinja2",
         "requests",
         "uwsgi",
     ],

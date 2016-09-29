@@ -1,12 +1,10 @@
-import json
-import pkg_resources
 import httplib2
 import io
+import os
 
 import pyramid.config
 import pyramid.view
 import pyramid.httpexceptions
-import pyramid.session
 
 import apiclient.discovery
 import apiclient.http
@@ -15,19 +13,10 @@ import oauth2client.file
 
 
 def main(global_config, **settings):
-    settings.setdefault("static_prefix", "/static")
-    session_factory = pyramid.session.SignedCookieSessionFactory(settings["cookie_secret"])
-    config = pyramid.config.Configurator(settings=settings, session_factory=session_factory)
+    settings["google_client_id"] = os.getenv("CLIENT_ID")
+    settings["google_client_secret"] = os.getenv("CLIENT_SECRET")
+    config = pyramid.config.Configurator(settings=settings)
 
-    config.include("pyramid_jinja2")
-    config.add_jinja2_search_path("splitter:templates")
-    config.add_static_view(name="static", path="splitter:static")
-
-    def google_credentials(request):
-        # Not in repo because... well it is a CREDENTIAL!!!
-        return json.loads(pkg_resources.resource_string(__name__, "card_split_credentials.json"))
-
-    config.add_request_method(google_credentials, property=True, reify=True)
     config.add_tween("splitter.app.tween")
 
     config.add_route("lectures", pattern="/lectures")
@@ -47,8 +36,8 @@ def tween(handler, registry):
             return handler(request)
 
         flow = oauth2client.client.OAuth2WebServerFlow(
-            request.google_credentials["web"]["client_id"],
-            request.google_credentials["web"]["client_secret"],
+            request.registry.settings["google_client_id"],
+            request.registry.settings["google_client_secret"],
             "https://www.googleapis.com/auth/drive",
             redirect_uri=request.route_url("lectures"),
         )
