@@ -87,3 +87,6 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+*card_split_credentials.json
+credential.dat
