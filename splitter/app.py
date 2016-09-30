@@ -1,6 +1,7 @@
 import httplib2
 import io
 import os
+import re
 
 import pyramid.config
 import pyramid.view
@@ -72,7 +73,7 @@ def tween(handler, registry):
 )
 def lectures(request):
     lectures = [
-        {"name": "Test file", "id": "1oc-T9KDIw6-XncgL0p3ut3VLdiKa2fwyQ6d03o-D1sI"},
+        {"name": "Test file", "id": "1Ri99siL6vuCO6OlOY2LiykmYgde2IBJr-_lCXJQuLNs"},
         {"name": "Public", "id": "1Hnoj8GTXo7CHUy3D-mfeoUYqjEFD7XwLvncKbkdkqao"},
     ]
 
@@ -94,10 +95,12 @@ def one_lecture(request):
     lecture_html = get_lecture(request.matchdict["lecture_id"],
                                request.credentials,
                                request.registry.settings["google_api_key"])
+    only_dashes = lambda s: all(x == "-" for x in s)
+    cards = filter(lambda s: not only_dashes(s), re.split("(-{5,10000})", lecture_html))
     return {
         "id": request.matchdict["lecture_id"],
         "html": lecture_html,
-        "cards": []
+        "cards": re.split("(-{5,10000})", lecture_html),
     }
 
 
