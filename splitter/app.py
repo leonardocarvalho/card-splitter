@@ -15,9 +15,18 @@ import oauth2client.file
 def main(global_config, **settings):
     settings["google_client_id"] = os.getenv("CLIENT_ID")
     settings["google_client_secret"] = os.getenv("CLIENT_SECRET")
+    settings["google_api_key"] = os.getenv("API_KEY")
     config = pyramid.config.Configurator(settings=settings)
 
-    config.add_tween("splitter.app.tween")
+    if os.getenv("AUTH", "false").lower() == "true":
+        config.add_tween("splitter.app.tween")
+    else:
+        config.add_request_method(
+            lambda request: None,
+            property=True,
+            reify=True,
+            name="credentials",
+        )
 
     config.add_route("lectures", pattern="/lectures")
     config.add_route("one_lecture", pattern="/lectures/{lecture_id}")
@@ -63,7 +72,8 @@ def tween(handler, registry):
 )
 def lectures(request):
     lectures = [
-        {"name": "Test file", "id": "1oc-T9KDIw6-XncgL0p3ut3VLdiKa2fwyQ6d03o-D1sI"}
+        {"name": "Test file", "id": "1oc-T9KDIw6-XncgL0p3ut3VLdiKa2fwyQ6d03o-D1sI"},
+        {"name": "Public", "id": "1Hnoj8GTXo7CHUy3D-mfeoUYqjEFD7XwLvncKbkdkqao"},
     ]
 
     return [
@@ -81,7 +91,9 @@ def lectures(request):
     renderer="json",
 )
 def one_lecture(request):
-    lecture_html = get_lecture(request.credentials, request.matchdict["lecture_id"])
+    lecture_html = get_lecture(request.matchdict["lecture_id"],
+                               request.credentials,
+                               request.registry.settings["google_api_key"])
     return {
         "id": request.matchdict["lecture_id"],
         "html": lecture_html,
@@ -93,13 +105,19 @@ def one_lecture(request):
     route_name="preview",
 )
 def preview(request):
-    lecture_html = get_lecture(request.credentials, request.matchdict["lecture_id"])
+    lecture_html = get_lecture(request.matchdict["lecture_id"],
+                               request.credentials,
+                               request.registry.settings["google_api_key"])
     request.response.text = unicode(lecture_html)
     return request.response
 
 
-def get_lecture(credentials, file_id):
-    service = apiclient.discovery.build("drive", "v3", http=credentials.authorize(httplib2.Http()))
+def get_lecture(file_id, credentials=None, api_key=None):
+    if credentials:
+        http_auth = credentials.authorize(httplib2.Http())
+        service = apiclient.discovery.build("drive", "v3", http=http_auth)
+    else:
+        service = apiclient.discovery.build("drive", "v3", developerKey=api_key)
     resource = service.files().export(fileId=file_id, mimeType="text/html")
     fh = io.BytesIO()
     downloader = apiclient.http.MediaIoBaseDownload(fh, resource)
