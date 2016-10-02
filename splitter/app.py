@@ -1,3 +1,4 @@
+# coding: utf-8
 import httplib2
 import io
 import os
@@ -6,11 +7,36 @@ import re
 import pyramid.config
 import pyramid.view
 import pyramid.httpexceptions
+import pyramid.response
 
 import apiclient.discovery
 import apiclient.http
 import oauth2client.client
 import oauth2client.file
+
+
+LECTURES = [
+    {
+        "id": "1N92p0DfRBmhWJ83njWqbmtYTbIvXeEvD7UKfgQJ_6sc",
+        "title": u"Lima Barreto",
+        "subject": u"Literatura",
+    },
+    {
+        "id": "1rf4GQlnrI-siIRIEUalGBeTo1OH5zHw5KuJu3ye4jJY",
+        "title": u"Progressão Aritmética II",
+        "subject": u"Álgebra",
+    },
+    {
+        "id": "1BLlYLJ6HyPzxOMdMSCFk6OSTFj1ezReAf2rA4fZ4fBg",
+        "title": u"Briófitas",
+        "subject": u"Biologia 2",
+    },
+    {
+        "id": "1lOA5E9L9kDxzmQ8nY95C3a80Y8f-IDHYXAzi31_o2jE",
+        "title": u"Brasil e Mercosul",
+        "subject": u"Geografia",
+    },
+]
 
 
 def main(global_config, **settings):
@@ -28,6 +54,16 @@ def main(global_config, **settings):
             reify=True,
             name="credentials",
         )
+
+    def lectures(request):
+        for lec in LECTURES:
+            lec.update({"links": dict(
+                lecture=request.route_url("one_lecture", lecture_id=lec["id"]),
+                preview=request.route_url("preview", lecture_id=lec["id"]),
+            )})
+        return LECTURES
+
+    config.add_request_method(lectures, property=True, reify=True)
 
     config.add_route("lectures", pattern="/lectures")
     config.add_route("one_lecture", pattern="/lectures/{lecture_id}")
@@ -72,19 +108,7 @@ def tween(handler, registry):
     renderer="json",
 )
 def lectures(request):
-    lectures = [
-        {"name": "Test file", "id": "1Ri99siL6vuCO6OlOY2LiykmYgde2IBJr-_lCXJQuLNs"},
-        {"name": "Public", "id": "1Hnoj8GTXo7CHUy3D-mfeoUYqjEFD7XwLvncKbkdkqao"},
-    ]
-
-    return [
-        dict(
-            lecture,
-            lecture=request.route_url("one_lecture", lecture_id=lecture["id"]),
-            preview=request.route_url("preview", lecture_id=lecture["id"]),
-        )
-        for lecture in lectures
-    ]
+    return request.lectures
 
 
 @pyramid.view.view_config(
@@ -92,16 +116,15 @@ def lectures(request):
     renderer="json",
 )
 def one_lecture(request):
-    lecture_html = get_lecture(request.matchdict["lecture_id"],
-                               request.credentials,
-                               request.registry.settings["google_api_key"])
+    lecture, = filter(lambda l: l["id"] == request.matchdict["lecture_id"], request.lectures)
+    lecture_html = get_lecture(
+        lecture["id"],
+        request.credentials,
+        request.registry.settings["google_api_key"]
+    )
     only_dashes = lambda s: all(x == "-" for x in s)
     cards = filter(lambda s: not only_dashes(s), re.split("(-{5,10000})", lecture_html))
-    return {
-        "id": request.matchdict["lecture_id"],
-        "html": lecture_html,
-        "cards": re.split("(-{5,10000})", lecture_html),
-    }
+    return dict(lecture, html=lecture_html, cards=cards)
 
 
 @pyramid.view.view_config(
@@ -111,8 +134,7 @@ def preview(request):
     lecture_html = get_lecture(request.matchdict["lecture_id"],
                                request.credentials,
                                request.registry.settings["google_api_key"])
-    request.response.text = unicode(lecture_html)
-    return request.response
+    return pyramid.response.Response(body=lecture_html, status=200)
 
 
 def get_lecture(file_id, credentials=None, api_key=None):
@@ -121,10 +143,16 @@ def get_lecture(file_id, credentials=None, api_key=None):
         service = apiclient.discovery.build("drive", "v3", http=http_auth)
     else:
         service = apiclient.discovery.build("drive", "v3", developerKey=api_key)
+
     resource = service.files().export(fileId=file_id, mimeType="text/html")
     fh = io.BytesIO()
     downloader = apiclient.http.MediaIoBaseDownload(fh, resource)
     done = False
     while not done:
         status, done = downloader.next_chunk()
-    return fh.getvalue()
+    html = (unicode(fh.getvalue(), "utf-8")
+            .replace("<html>", "")
+            .replace("</html>", "")
+            .replace("<body", "<div")
+            .replace("</body>", "</div>"))
+    return re.sub("<head.*?>.*</head>", "", html)
